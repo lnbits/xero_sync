@@ -1,0 +1,270 @@
+{% extends "base.html" %} {% from "macros.jinja" import window_vars with context
+%} {% block scripts %} {{ window_vars(user) }}
+
+<script src="{{ static_url_for('xero_sync/static', path='js/index.js') }}"></script>
+
+{% endblock %} {% block page %}
+<div class="row q-col-gutter-md">
+  <div class="col-12 col-md-8 col-lg-7 q-gutter-y-md">
+    <q-card id="settingsCard">
+      <q-card-section class="">
+        <div class="row">
+          <div class="col">
+            <span class="text-h5">XeroSync</span>
+            <q-btn
+              @click="showSettingsDataForm()"
+              v-if="true"
+              unelevated
+              split
+              color="primary"
+              icon="settings"
+              class="float-right"
+            >
+            </q-btn>
+          </div>
+        </div>
+      </q-card-section>
+    </q-card>
+
+    <div class="q-mt-lg">
+      <span class="text-h5">Wallets</span>
+    </div>
+    <q-card id="walletsCard" class="q-mt-xs">
+      <q-card-section class="">
+        <div class="row items-center no-wrap q-mb-md">
+          <div class="col">
+            <q-input
+              :label="$t('search')"
+              dense
+              class="q-pr-xl"
+              v-model="walletsTable.search"
+            >
+              <template v-slot:before>
+                <q-icon name="search"> </q-icon>
+              </template>
+              <template v-slot:append>
+                <q-icon
+                  v-if="walletsTable.search !== ''"
+                  name="close"
+                  @click="walletsTable.search = ''"
+                  class="cursor-pointer"
+                >
+                </q-icon>
+              </template>
+            </q-input>
+          </div>
+          <div class="col-auto">
+            <q-btn
+              @click="showNewWalletsForm()"
+              unelevated
+              split
+              color="primary"
+            >
+              New Wallets
+            </q-btn>
+
+            <q-btn
+              flat
+              color="grey"
+              icon="file_download"
+              @click="exportWalletsCSV"
+              >CSV</q-btn
+            >
+          </div>
+        </div>
+        <q-table
+          dense
+          flat
+          :rows="walletsList"
+          row-key="id"
+          :columns="walletsTable.columns"
+          v-model:pagination="walletsTable.pagination"
+          :loading="walletsTable.loading"
+          @request="getWallets"
+        >
+          <template v-slot:header="props">
+            <q-tr :props="props">
+              <q-th auto-width></q-th>
+              <q-th v-for="col in props.cols" :key="col.name" :props="props">
+                ${ col.label }
+              </q-th>
+            </q-tr>
+          </template>
+
+          <template v-slot:body="props">
+            <q-tr :props="props">
+              <q-td auto-width>
+                <q-btn
+                  flat
+                  dense
+                  size="xs"
+                  @click="showEditWalletsForm(props.row)"
+                  icon="edit"
+                  color="light-blue"
+                  class="q-mr-sm"
+                >
+                  <q-tooltip> Edit </q-tooltip>
+                </q-btn>
+
+                <q-btn
+                  flat
+                  dense
+                  size="xs"
+                  @click="deleteWallets(props.row.id)"
+                  icon="cancel"
+                  color="pink"
+                  class="q-mr-sm"
+                >
+                  <q-tooltip> Delete </q-tooltip>
+                </q-btn>
+              </q-td>
+
+              <q-td v-for="col in props.cols" :key="col.name" :props="props">
+                <div v-if="col.field == 'updated_at'">
+                  <span v-text="dateFromNow(col.value)"> </span>
+                </div>
+                <div v-else>${ col.value }</div>
+              </q-td>
+            </q-tr>
+          </template>
+        </q-table>
+      </q-card-section>
+    </q-card>
+  </div>
+
+  <div class="col-12 col-md-4 col-lg-5 q-gutter-y-md">
+    <q-card>
+      <q-card-section>
+        <h6 class="text-subtitle1 q-my-none">{{SITE_TITLE}} XeroSync</h6>
+        <p>LNbits -> Xero wallet sync</p>
+      </q-card-section>
+      <q-card-section class="q-pa-none">
+        <q-separator></q-separator>
+        <q-list>
+          {% include "xero_sync/_api_docs.html" %}
+          <q-separator></q-separator>
+          {% include "xero_sync/_xero_sync.html" %}
+        </q-list>
+      </q-card-section>
+    </q-card>
+  </div>
+
+  <q-dialog v-model="settingsFormDialog.show" position="top">
+    <q-card
+      v-if="settingsFormDialog.show"
+      class="q-pa-lg q-pt-xl lnbits__dialog-card q-col-gutter-md"
+    >
+      <span class="text-h5">Settings</span>
+
+      <q-input
+        filled
+        dense
+        v-model.trim="settingsFormDialog.data.zero_client_id"
+        label="Xero Client ID"
+        hint="  (optional)"
+      ></q-input>
+
+      <q-input
+        filled
+        dense
+        v-model.trim="settingsFormDialog.data.zero_client_secret"
+        label="Xero Client Secret"
+        hint="  (optional)"
+      ></q-input>
+
+      <div class="row q-mt-lg">
+        <q-btn @click="updateSettings" unelevated color="primary" type="submit"
+          >Update</q-btn
+        >
+        <q-btn v-close-popup flat color="grey" class="q-ml-auto">Cancel</q-btn>
+      </div>
+    </q-card>
+  </q-dialog>
+
+  <q-dialog v-model="walletsFormDialog.show" position="top">
+    <q-card
+      v-if="walletsFormDialog.show"
+      class="q-pa-lg q-pt-md lnbits__dialog-card q-col-gutter-md"
+    >
+      <span class="text-h5">Wallets</span>
+
+      <q-select
+        filled
+        dense
+        emit-value
+        v-model="walletsFormDialog.data.wallet"
+        :options="g.user.walletOptions"
+        label="Wallet  * "
+      ></q-select>
+
+      <q-checkbox
+        v-model="walletsFormDialog.data.pull_payments"
+        label="Pull all historic payments"
+        hint="  "
+      ></q-checkbox>
+
+      <q-checkbox
+        v-model="walletsFormDialog.data.push_payments"
+        label="Auto-push payments"
+        hint="  "
+      ></q-checkbox>
+
+      <q-input
+        filled
+        dense
+        v-model.trim="walletsFormDialog.data.reconcile_name"
+        label="Auto-reconcile payment type (ie bills, investment, taxes, etc)"
+        hint="  (optional)"
+      ></q-input>
+
+      <q-select
+        filled
+        dense
+        v-model="walletsFormDialog.data.reconcile_mode"
+        label="Reconcile mode"
+        hint="  (optional)"
+        :options="accountCodeList"
+      ></q-select>
+
+      <q-input
+        filled
+        dense
+        v-model.trim="walletsFormDialog.data.xero_bank_account_id"
+        label="If you’ll post directly into a specific Xero bank account."
+        hint="  (optional)"
+      ></q-input>
+
+      <q-select
+        filled
+        dense
+        v-model="walletsFormDialog.data.tax_rate"
+        label="Tax rate"
+        hint="  (optional)"
+        :options="taxList"
+      ></q-select>
+
+      <q-checkbox
+        v-model="walletsFormDialog.data.fee_handling"
+        label="Whether to include LN fees as separate fee lines."
+        hint="   (optional)"
+      ></q-checkbox>
+
+      <q-input
+        filled
+        dense
+        v-model.trim="walletsFormDialog.data.notes"
+        label="Any notes"
+        hint="  (optional)"
+      ></q-input>
+
+      <div class="row q-mt-lg">
+        <q-btn @click="saveWallets" unelevated color="primary">
+          <span v-if="walletsFormDialog.data.id">Update</span>
+          <span v-else>Create</span>
+        </q-btn>
+        <q-btn v-close-popup flat color="grey" class="q-ml-auto">Cancel</q-btn>
+      </div>
+    </q-card>
+  </q-dialog>
+</div>
+{% endblock %}
